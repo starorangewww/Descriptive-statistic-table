@@ -1,3 +1,4 @@
+
 library(shiny)
 library(readr)
 
@@ -45,8 +46,22 @@ server <- function(input, output, session) {
   observe({
     if (!is.null(data())) {
       updateSelectizeInput(session, "columns_cat", choices = colnames(data()))
-      updateSelectizeInput(session, "columns_con", choices = colnames(data()))
-      updateSelectizeInput(session, "columns_res", choices = colnames(data()))
+      #updateSelectizeInput(session, "columns_con", choices = setdiff(colnames(data()), input$columns_cat))
+      #updateSelectizeInput(session, "columns_con", choices = colnames(data()))
+      #updateSelectizeInput(session, "columns_res", choices = colnames(data()))
+    }
+  })
+  observeEvent(input$columns_cat, {
+    if (!is.null(data())){
+    # 更新連續變數的選項，排除已選擇的類別變數和依變數變數
+    updateSelectizeInput(session, "columns_con", choices = setdiff(colnames(data()), c(input$columns_cat, input$columns_res)))
+    }
+  })
+  
+  observeEvent(input$columns_con, {
+    if (!is.null(data())){
+    # 更新依變數變數的選項，排除已選擇的類別變數和連續變數
+    updateSelectizeInput(session, "columns_res", choices = setdiff(colnames(data()), c(input$columns_cat, input$columns_con)))
     }
   })
   
@@ -148,4 +163,4 @@ server <- function(input, output, session) {
 }
 
 # 啟動應用程序
-shinyApp(ui = ui, server = server)  
+shinyApp(ui = ui, server = server)
