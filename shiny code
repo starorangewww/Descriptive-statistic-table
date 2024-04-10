@@ -1,6 +1,6 @@
 library(shiny)
 library(readr)
-
+library(gridExtra)
 # 定義 UI 部分
 ui <- fluidPage(
   titlePanel("CSV 檔案敘述統計與圖表"),
@@ -26,7 +26,8 @@ ui <- fluidPage(
     mainPanel(
       tabsetPanel(
         tabPanel("敘述統計", verbatimTextOutput("summary")),
-        tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V"))
+        tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V")),
+        tabPanel("長條圖與直方圖",plotOutput("bar_plot"),plotOutput("histogram_plot"))
       )
     )
   )
@@ -89,6 +90,7 @@ server <- function(input, output, session) {
     })
     #
     output$summary <- renderPrint({
+      
       if(is.null(input$columns_res)){
         result <- lapply(c(input$columns_cat,input$columns_con), function(col){
           summary(data()[[col]])
@@ -161,6 +163,31 @@ server <- function(input, output, session) {
       }
       
     })
+    #Categorical variable: Bar plot
+    output$bar_plot <- renderPlot({
+      D.1<-as.data.frame(data())
+      response.1<-input$columns_res
+      Cate.1<-input$columns_cat
+      if(length(response.1)>1){print("Please chose one")}else{
+        
+        # 使用 ggplot2 或其他繪圖包繪製長條圖
+    P <- lapply(Cate.1, function(CAT){
+    D.plty.c <- data.frame(res=c(table(D.1[,names(D.1)==CAT],D.1[,names(D.1)==response.1])),
+                         X=rep(names(table(D.1[,names(D.1)==response.1])),by=length(names(table(D.1[,names(D.1)==response.1])))),
+                         group.1=rep(names(table(D.1[,names(D.1)==CAT])),each=length(names(table(D.1[,names(D.1)==CAT])))))
+    #Plot
+      ggplot(data=D.plty.c, aes(x=X, y=res, fill=group.1)) +
+       geom_bar(stat="identity", color="black", position=position_dodge()) +
+       theme_minimal()
+       })
+
+    # 使用 print 函數來顯示每個 ggplot 圖形
+    grid.arrange(grobs = P)
+
+      }
+    })
+    
+    #Continuous variable: Box plot
     
   })
   
@@ -178,3 +205,4 @@ server <- function(input, output, session) {
 
 # 啟動應用程序
 shinyApp(ui = ui, server = server)
+
