@@ -1,6 +1,8 @@
 library(shiny)
 library(readr)
 library(gridExtra)
+library(ggplot2)
+library(PupillometryR)
 # 定義 UI 部分
 ui <- fluidPage(
   titlePanel("CSV 檔案敘述統計與圖表"),
@@ -11,6 +13,9 @@ ui <- fluidPage(
       selectizeInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL, multiple = TRUE),
       selectizeInput("columns_cat", "選擇要顯示的類別變數", choices = NULL, multiple = TRUE),
       selectizeInput("columns_con", "選擇要顯示的連續變數", choices = NULL, multiple = TRUE),
+      #checkboxGroupInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL,inline = F),
+      #checkboxGroupInput("columns_cat", "選擇要顯示的類別變數", choices = NULL,inline = F),
+      #checkboxGroupInput("columns_con", "選擇要顯示的連續變數", choices = NULL,inline = F),
       br(),
       radioButtons("testing.cont", label = "連續變數相等性假設檢定",
                    choices = list("Mann-Whiteney U test" = 1, "Two-sample t test" = 2,"Kruskal-Wallis test"=3,"ANOVA"=4), selected = 1),
@@ -27,7 +32,7 @@ ui <- fluidPage(
       tabsetPanel(
         tabPanel("敘述統計", verbatimTextOutput("summary")),
         tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V")),
-        tabPanel("長條圖與直方圖",plotOutput("bar_plot"),plotOutput("histogram_plot"))
+        tabPanel("長條圖與直方圖",plotOutput("bar_plot"),plotOutput("Box_plot"))
       )
     )
   )
@@ -48,13 +53,16 @@ server <- function(input, output, session) {
       #updateSelectizeInput(session, "columns_cat", choices = colnames(data()))
       #updateSelectizeInput(session, "columns_con", choices = setdiff(colnames(data()), input$columns_cat))
       #updateSelectizeInput(session, "columns_con", choices = colnames(data()))
+      #
       updateSelectizeInput(session, "columns_res", choices = colnames(data()))
+      #updateCheckboxGroupInput(session, "columns_res", choices = colnames(data()))
     }
   })
   observeEvent(input$columns_res, {
     if (!is.null(data())){
       # 更新連續變數的選項，排除已選擇的類別變數和依變數變數
       updateSelectizeInput(session, "columns_cat", choices = setdiff(colnames(data()), c(input$columns_res)))
+      #updateCheckboxGroupInput(session, "columns_cat", choices = setdiff(colnames(data()), c(input$columns_res)))
     }
   })
   
@@ -62,6 +70,7 @@ server <- function(input, output, session) {
     if (!is.null(data())){
       # 更新依變數變數的選項，排除已選擇的類別變數和連續變數
       updateSelectizeInput(session, "columns_con", choices = setdiff(colnames(data()), c(input$columns_res)))
+      #updateCheckboxGroupInput(session, "columns_con", choices = setdiff(colnames(data()), c(input$columns_res)))
     }
   })
   
@@ -178,16 +187,38 @@ server <- function(input, output, session) {
     #Plot
       ggplot(data=D.plty.c, aes(x=X, y=res, fill=group.1)) +
        geom_bar(stat="identity", color="black", position=position_dodge()) +
-       theme_minimal()
+       theme_minimal()+xlab(names(D.1)[which(names(D.1)==response.1)])+labs(fill=names(D.1)[which(names(D.1)==CAT)])
        })
 
-    # 使用 print 函數來顯示每個 ggplot 圖形
+    # 使用 grid.arrange 函數來顯示每個 ggplot 圖形
     grid.arrange(grobs = P)
 
       }
     })
     
     #Continuous variable: Box plot
+    output$Box_plot<-renderPlot({
+      D.1<-as.data.frame(data())
+      response.1<-input$columns_res
+      Cont.1<-input$columns_con
+      if(length(response.1)>1){print("Please chose one")}else{
+        P<-lapply(Cont.1, function(CONT){
+          D.plty<-data.frame(res=D.1[,names(D.1)==CONT],group.1=D.1[,names(D.1)==response.1])
+          #Plot
+          ggplot(D.plty, aes(y=res, x=factor(group.1),color=factor(group.1))) +
+            geom_boxplot()+geom_flat_violin(position = position_nudge(x = .2),
+                            trim = TRUE, alpha = 0.7, scale = "width")+
+            geom_point(aes(color = factor(group.1)),position = position_jitter(w = .15))+xlab(names(D.1)[which(names(D.1)==response.1)])+
+            labs(color=names(D.1)[which(names(D.1)==CONT)])
+          # 使用grid.arrange 函數來顯示每個 ggplot 圖形
+        })
+        grid.arrange(grobs = P)
+      }
+      
+    })
+      
+      
+
     
   })
   
