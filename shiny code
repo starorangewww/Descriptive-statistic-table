@@ -1,3 +1,4 @@
+
 library(shiny)
 library(readr)
 library(gridExtra)
@@ -5,7 +6,7 @@ library(ggplot2)
 library(PupillometryR)
 # 定義 UI 部分
 ui <- fluidPage(
-  tags$style(type="text/css", ".sidebar { width: 250px; }"),
+  theme=shinytheme("slate"),
   titlePanel("CSV 檔案敘述統計與圖表"),
   
   sidebarLayout(
@@ -300,5 +301,6 @@ server <- function(input, output, session) {
 
 # 啟動應用程序
 shinyApp(ui = ui, server = server)
+
 
 
