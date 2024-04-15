@@ -5,6 +5,7 @@ library(ggplot2)
 library(PupillometryR)
 # 定義 UI 部分
 ui <- fluidPage(
+  tags$style(type="text/css", ".sidebar { width: 250px; }"),
   titlePanel("CSV 檔案敘述統計與圖表"),
   
   sidebarLayout(
@@ -18,7 +19,7 @@ ui <- fluidPage(
       checkboxGroupInput("columns_con", "選擇要顯示的連續變數", choices = NULL,inline = F),
       br(),
       radioButtons("testing.cont", label = "連續變數相等性假設檢定",
-                   choices = list("Mann-Whiteney U test" = 1, "Two-sample t test" = 2,"Kruskal-Wallis test"=3,"ANOVA"=4), selected = 1),
+                   choices = list("Mann-Whiteney U test" = 1, "Two-sample t test" = 2,"Kruskal-Wallis test"=3), selected = 1),
       radioButtons("testing.cate", label = "離散變數相等性假設檢定",
                    choices = list("Chi-square test" = 1, "Fisher's exact test" = 2), selected = 1),
       br(),
@@ -93,9 +94,9 @@ server <- function(input, output, session) {
       D.t<-as.data.frame(data())
       response.t<-input$columns_res
       res.1<-table(D.t[,which(names(D.t)==response.t)])
-      res.2<-round(prop.table(res.1),2)
+      res.2<-round(prop.table(res.1)*100,2)
       res.M<-rbind(res.2,res.1)
-      res.M<-cbind(res.M,apply(res.M,1,sum))
+      res.M<-cbind(res.M,c(100,sum(res.1)))
       rownames(res.M)<-c("比例(%)","個數")
       colnames(res.M)<-c(paste0(response.t,".",names(res.1)),"總和")
       print(res.M)
@@ -111,12 +112,66 @@ server <- function(input, output, session) {
       }else{
         D.1<-as.data.frame(data())
         response.1<-input$columns_res
-        if(length(response.1)>1){print("Please chose one")}else{
+        if(length(response.1)>1){
+          
+          print("Please chosoe one")
+          
+          }else{
           Class.1<-names(table(data()[[response.1]]))
           Con.1<-input$columns_con
           Cate.1<-input$columns_cat
           if(length(Class.1)!=2){
-            "Coming soon"
+            #class > 2
+            #Continous
+            Descriptive.Cont<-c()
+            if(length(Con.1)==0){Descriptive.Cont<-Descriptive.Cont}else{
+              for(k.1 in Con.1){
+                Descriptive.con<-c()
+                for(i in 1:length(Class.1)){
+                  result.2.Mean <- mean(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
+                  result.2.SD <- sqrt(var(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T))
+                  Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2)))
+                }
+                # testing
+                if(input$testing.cont==3){
+                  MW<-kruskal.test(D.1[,which(names(D.1)==k.1)],D.1[,which(names(D.1)==response.1)])
+                        #D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)],exact = F)
+                  
+                  Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
+                }
+                Descriptive.Cont<-rbind(Descriptive.Cont,Descriptive.con)
+              }
+              rownames(Descriptive.Cont)<-Con.1
+            }
+            #Cate
+            Descriptive.Cate<-c()
+            if(length(Cate.1)==0){Descriptive.Cate<-Descriptive.Cate}else{
+              for(k.2 in Cate.1){
+                VV<-paste0(k.2,".",names(table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)]))) 
+                result.2.table <- table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)],D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==response.1)])
+                result.2.table.row<-prop.table(result.2.table, margin = 1)
+                result.3<-matrix(paste0(result.2.table,"(",round(result.2.table.row*100,2),"%",")"),nrow = dim(result.2.table)[1],ncol = dim(result.2.table)[2])
+                testing.col<-matrix(NA,ncol=1,nrow=dim(result.2.table)[1])
+                # testing
+                if(input$testing.cate==1){
+                  Chi.Val<-chisq.test(result.2.table)
+                  testing.col[1,]<-round(Chi.Val$p.value,2)
+                }else{
+                  Fisher.exact<-fisher.test(result.2.table)
+                  testing.col[1,]<-round(Fisher.exact$p.value,2)
+                }
+                result.3<-cbind(result.3,testing.col)
+                rownames(result.3)<-VV
+                Descriptive.Cate<-rbind(Descriptive.Cate,result.3)
+              }
+            }
+            result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
+            RR<-paste0(response.1,".",names(table(D.1[,which(names(D.1)==response.1)]))) 
+            colnames(result.summary)<-c(RR,"P value")
+            
+            result_summary1(result.summary)
+            print(result.summary)
+            #
             }else{
             #Continous
             Descriptive.Cont<-c()
@@ -134,8 +189,10 @@ server <- function(input, output, session) {
                                 D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)],exact = F)
                 Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
               }else{
-                Two.t<-t.test(D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)])
-                Descriptive.con<-c(Descriptive.con,round(Two.t$p.value,2))
+                if(input$testing.cont==2){
+                  Two.t<-t.test(D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)])
+                  Descriptive.con<-c(Descriptive.con,round(Two.t$p.value,2))
+                }
               }
               #Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
               Descriptive.Cont<-rbind(Descriptive.Cont,Descriptive.con)
@@ -181,12 +238,12 @@ server <- function(input, output, session) {
       response.1<-input$columns_res
       if(length(response.1)==0){"No"}else{
         Cate.1<-input$columns_cat
-        if(length(response.1)>1){print("Please chose one")}else{
+        if(length(response.1)>1){print("Please choose one")}else{
           # 使用 ggplot2 或其他繪圖包繪製長條圖
           P <- lapply(Cate.1, function(CAT){
-            D.plty.c <- data.frame(res=c(table(D.1[,names(D.1)==CAT],D.1[,names(D.1)==response.1])),
-                                   X=rep(names(table(D.1[,names(D.1)==response.1])),by=length(names(table(D.1[,names(D.1)==response.1])))),
-                                   group.1=rep(names(table(D.1[,names(D.1)==CAT])),each=length(names(table(D.1[,names(D.1)==CAT])))))
+            D.plty.c <- data.frame(res=c(t(table(D.1[,names(D.1)==CAT],D.1[,names(D.1)==response.1]))),
+                                   X=rep(names(table(D.1[,names(D.1)==response.1])),length(names(table(D.1[,names(D.1)==CAT])))),
+                                   group.1=rep(names(table(D.1[,names(D.1)==CAT])),each=length(names(table(D.1[,names(D.1)==response.1])))))
             #Plot
             ggplot(data=D.plty.c, aes(x=X, y=res, fill=group.1)) +
               geom_bar(stat="identity", color="black", position=position_dodge()) +
