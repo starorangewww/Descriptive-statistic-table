@@ -1,4 +1,3 @@
-
 library(shiny)
 library(readr)
 library(gridExtra)
@@ -33,7 +32,7 @@ ui <- fluidPage(
     mainPanel(
       tabsetPanel(
         tabPanel("敘述統計", verbatimTextOutput("summary")),
-        tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V")),
+        tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V"),verbatimTextOutput("Descriptive")),
         tabPanel("長條圖與直方圖",plotOutput("bar_plot"),plotOutput("Box_plot"))
       )
     )
@@ -44,6 +43,8 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   # 定義一個 reactiveVal 來保存結果
   result_summary1 <- reactiveVal(NULL)
+  result_MissingV <- reactiveVal(NULL)
+  result_classv <- reactiveVal(NULL)
   
   data <- reactive({
     req(input$file)
@@ -90,6 +91,7 @@ server <- function(input, output, session) {
       M.1<-rbind(round(colMeans(is.na(data()))*100,2),colMeans(is.na(data()))*dim(data())[1])
       rownames(M.1)<-c("比例(%)","個數")
       print(M.1)
+      result_MissingV(M.1)
     })
     output$response.V<-renderPrint({
       D.t<-as.data.frame(data())
@@ -101,6 +103,7 @@ server <- function(input, output, session) {
       rownames(res.M)<-c("比例(%)","個數")
       colnames(res.M)<-c(paste0(response.t,".",names(res.1)),"總和")
       print(res.M)
+      result_classv(res.M)
     })
     #
     output$summary <- renderPrint({
@@ -131,7 +134,8 @@ server <- function(input, output, session) {
                 for(i in 1:length(Class.1)){
                   result.2.Mean <- mean(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
                   result.2.SD <- sqrt(var(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T))
-                  Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2)))
+                  result.2.Med <- median(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
+                  Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2),"(",result.2.Med,")"))
                 }
                 # testing
                 if(input$testing.cont==3){
@@ -182,7 +186,8 @@ server <- function(input, output, session) {
               for(i in 1:length(Class.1)){
                 result.2.Mean <- mean(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
                 result.2.SD <- sqrt(var(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T))
-                Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2)))
+                result.2.Med <- median(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
+                Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2),"(",result.2.Med,")"))
               }
               # testing
               if(input$testing.cont==1){
@@ -233,6 +238,22 @@ server <- function(input, output, session) {
       }
       
     })
+    #Important variables: LASSO and RF
+    
+    #Descriptive
+    output$Descriptive<-renderPrint({
+      First.D<-result_classv()
+      Second.D<-result_MissingV()
+      Thirs.D<-result_summary1()
+     Begin<-c("According to the results of descriptive statistics,")  
+     First.stagement<-paste(c("this data is totally"),First.D[2,dim(First.D)[2]],", and the number of class has", dim(First.D)[2]-1,".")
+     First.stagement<-c(First.stagement,"The number of",colnames(First.D)[1:(dim(First.D)[2]-1)])
+     #Result.1<-c(Begin,First.stagement)
+      cat(Begin)
+      cat("\n")
+      cat(First.stagement)
+    })
+    
     #Categorical variable: Bar plot
     output$bar_plot <- renderPlot({
       D.1<-as.data.frame(data())
