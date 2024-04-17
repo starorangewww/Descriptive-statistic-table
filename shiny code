@@ -1,9 +1,3 @@
-library(shiny)
-library(readr)
-library(gridExtra)
-library(ggplot2)
-library(PupillometryR)
-# 定義 UI 部分
 ui <- fluidPage(
   theme=shinytheme("slate"),
   titlePanel("CSV 檔案敘述統計與圖表"),
@@ -19,7 +13,7 @@ ui <- fluidPage(
       checkboxGroupInput("columns_con", "選擇要顯示的連續變數", choices = NULL,inline = F),
       br(),
       radioButtons("testing.cont", label = "連續變數相等性假設檢定",
-                   choices = list("Mann-Whiteney U test" = 1, "Two-sample t test" = 2,"Kruskal-Wallis test"=3), selected = 1),
+                   choices = list("Mann-Whitney U test" = 1, "Two-sample t test" = 2,"Kruskal-Wallis test"=3), selected = 1),
       radioButtons("testing.cate", label = "離散變數相等性假設檢定",
                    choices = list("Chi-square test" = 1, "Fisher's exact test" = 2), selected = 1),
       br(),
@@ -246,12 +240,44 @@ server <- function(input, output, session) {
       Second.D<-result_MissingV()
       Thirs.D<-result_summary1()
      Begin<-c("According to the results of descriptive statistics,")  
-     First.stagement<-paste(c("this data is totally"),First.D[2,dim(First.D)[2]],", and the number of class has", dim(First.D)[2]-1,".")
-     First.stagement<-c(First.stagement,"The number of",colnames(First.D)[1:(dim(First.D)[2]-1)])
-     #Result.1<-c(Begin,First.stagement)
+     First.stagement<-paste(c("this data is totally"),First.D[2,dim(First.D)[2]],", and the number of class has",dim(First.D)[2]-1,".")
+     Sec.stagement<-paste0("The number of ", colnames(First.D)[1:(dim(First.D)[2]-1)]," is ",First.D[2,1:(dim(First.D)[2]-1)],", and the proportion is ",First.D[1,1:(dim(First.D)[2]-1)],"%.")
+     #
+     Cont.test<-if(input$testing.cont==1){"Mann-Whitney test"}else{if(input$testing.cont==2){"Two sample t test"}else{"Kruskal-Wallis test"}}
+     Cate.test<-if(input$testing.cate==1){"Chi-square test"}else{"Fisher's exact test"}
+     #
+     
+     Con.1<-input$columns_con
+     Cate.1<-input$columns_cat
+     
+     Var.sig<-which(Thirs.D[,dim(Thirs.D)[2]]<0.22)
+     #is.na(Thirs.D[,dim(Thirs.D)[2]])==F
+     fourth.stagement<-if(length(Var.sig)==0){"These variables are insignificant."}else{
+       
+       #Thirs.D.cont<-Thirs.D[c(1:length(Con.1)),]
+       #Thirs.D.cate<-Thirs.D[-c(1:length(Con.1)),]
+       #Thirs.D.cont.sig<-Thirs.D.cont[which(Thirs.D.cont[,dim(Thirs.D.cont)[2]]<0.22),]
+       #Thirs.D.cate.sig<-Thirs.D.cate[which(Thirs.D.cate[,dim(Thirs.D.cate)[2]]<0.22),]
+       #c(rownames(Thirs.D.cont.sig),rownames(Thirs.D.cate.sig))
+       Var.2<-unique(sub("\\..*", "",rownames(Thirs.D)[Var.sig]))
+       #which(c(Con.1)%in%Var.2)
+       Var.3<-c()
+       if(is.null(Con.1)==F&is.null(Cate.1)==F){
+       for(j in 1:length(Var.2)){
+         if(length(which(Var.2[j]==Con.1))==1){Var.3<-c(Var.3,"cont")}else{Var.3<-c(Var.3,"cate")}
+       }}
+       #
+       Var.3
+       #summary results
+       }
+     
       cat(Begin)
       cat("\n")
       cat(First.stagement)
+      cat("\n")
+      cat(Sec.stagement)
+      cat("\n")
+      cat(fourth.stagement)
     })
     
     #Categorical variable: Bar plot
