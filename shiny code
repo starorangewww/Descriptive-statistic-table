@@ -1,3 +1,16 @@
+library(shiny)
+library(readr)
+library(gridExtra)
+library(ggplot2)
+library(PupillometryR)
+library(shinythemes)
+library(shinyWidgets)
+library(randomForest)
+library(glmnet)
+library(kernelshap)
+library(shapviz)
+library(ranger)
+# 定義 UI 部分
 ui <- fluidPage(
   theme=shinytheme("slate"),
   titlePanel("CSV 檔案敘述統計與圖表"),
@@ -8,14 +21,16 @@ ui <- fluidPage(
       #selectizeInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL, multiple = TRUE),
       #selectizeInput("columns_cat", "選擇要顯示的類別變數", choices = NULL, multiple = TRUE),
       #selectizeInput("columns_con", "選擇要顯示的連續變數", choices = NULL, multiple = TRUE),
-      checkboxGroupInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL,inline = F),
-      checkboxGroupInput("columns_cat", "選擇要顯示的類別變數", choices = NULL,inline = F),
-      checkboxGroupInput("columns_con", "選擇要顯示的連續變數", choices = NULL,inline = F),
+      checkboxGroupInput("columns_res", "請選擇依變數", choices = NULL,inline = F),
+      checkboxGroupInput("columns_cat", "請選擇類別變數", choices = NULL,inline = F),
+      checkboxGroupInput("columns_con", "請選擇連續變數", choices = NULL,inline = F),
       br(),
       radioButtons("testing.cont", label = "連續變數相等性假設檢定",
                    choices = list("Mann-Whitney U test" = 1, "Two-sample t test" = 2,"Kruskal-Wallis test"=3), selected = 1),
       radioButtons("testing.cate", label = "離散變數相等性假設檢定",
                    choices = list("Chi-square test" = 1, "Fisher's exact test" = 2), selected = 1),
+      
+      textInput("signif", label = "顯著水準", value = "0.38"),
       br(),
       actionButton("show_summary", "顯示敘述統計"),
       progressBar(id = "pb4", value = 0,display_pct = T),
@@ -27,6 +42,7 @@ ui <- fluidPage(
       tabsetPanel(
         tabPanel("敘述統計", verbatimTextOutput("summary")),
         tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V"),verbatimTextOutput("Descriptive")),
+        tabPanel("變數重要性篩選",verbatimTextOutput("RF"),plotOutput("Shap_plot")),
         tabPanel("長條圖與直方圖",plotOutput("bar_plot"),plotOutput("Box_plot"))
       )
     )
@@ -232,13 +248,41 @@ server <- function(input, output, session) {
       }
       
     })
-    #Important variables: LASSO and RF
+    #Important variables: RF
+    RF<-reactive({
+      D.1<-as.data.frame(data())
+      response.1<-input$columns_res
+      Con.1<-input$columns_con
+      Cate.1<-input$columns_cat
+      D.1.1<-D.1[complete.cases(D.1)==T,]
+      D.1.2<-D.1.1[,which(names(D.1.1)%in%c(response.1,Con.1,Cate.1))]
+      set.seed(1)
+      fit <- ranger(y=D.1.2[,which(names(D.1.2)==response.1)],x=D.1.2[,-which(names(D.1.2)==response.1)],data=D.1.2,importance = "impurity")
+      s <- kernelshap(fit,D.1.2[,-which(names(D.1.2)==response.1)], bg_X = D.1.2,verbose=F)
+      # Step 2: Turn them into a shapviz object
+      sv <- shapviz(s)
+      # Step 3: Gain insights...
+      RF.shap<-sv_importance(sv, kind = "bee",number_size = 5, bee_adjust = 10)
+      #
+      #print(sort(importance(fit)))
+      return(list(V1=sort(importance(fit)),V2=RF.shap))
+    })
+    
+    output$RF<-renderPrint({
+      print(RF()[[1]])
+    })
+    
+    output$Shap_plot<-renderPlot({
+      RF()[[2]]
+    })
+    
     
     #Descriptive
     output$Descriptive<-renderPrint({
       First.D<-result_classv()
       Second.D<-result_MissingV()
       Thirs.D<-result_summary1()
+      significant<-as.numeric(input$signif)
      Begin<-c("According to the results of descriptive statistics,")  
      First.stagement<-paste(c("this data is totally"),First.D[2,dim(First.D)[2]],", and the number of class has",dim(First.D)[2]-1,".")
      Sec.stagement<-paste0("The number of ", colnames(First.D)[1:(dim(First.D)[2]-1)]," is ",First.D[2,1:(dim(First.D)[2]-1)],", and the proportion is ",First.D[1,1:(dim(First.D)[2]-1)],"%.")
@@ -250,10 +294,9 @@ server <- function(input, output, session) {
      Con.1<-input$columns_con
      Cate.1<-input$columns_cat
      
-     Var.sig<-which(Thirs.D[,dim(Thirs.D)[2]]<0.22)
+     Var.sig<-which(Thirs.D[,dim(Thirs.D)[2]]<significant)
      #is.na(Thirs.D[,dim(Thirs.D)[2]])==F
      fourth.stagement<-if(length(Var.sig)==0){"These variables are insignificant."}else{
-       
        #Thirs.D.cont<-Thirs.D[c(1:length(Con.1)),]
        #Thirs.D.cate<-Thirs.D[-c(1:length(Con.1)),]
        #Thirs.D.cont.sig<-Thirs.D.cont[which(Thirs.D.cont[,dim(Thirs.D.cont)[2]]<0.22),]
@@ -267,8 +310,7 @@ server <- function(input, output, session) {
          if(length(which(Var.2[j]==Con.1))==1){Var.3<-c(Var.3,"cont")}else{Var.3<-c(Var.3,"cate")}
        }}
        #
-       Var.3
-       #summary results
+       paste(Var.2,"is", Var.3)
        }
      
       cat(Begin)
