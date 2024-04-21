@@ -58,7 +58,6 @@ server <- function(input, output, session) {
   result_summary1 <- reactiveVal(NULL)
   result_MissingV <- reactiveVal(NULL)
   result_classv <- reactiveVal(NULL)
-  
   data <- reactive({
     req(input$file)
     read_csv(input$file$datapath)
@@ -92,6 +91,8 @@ server <- function(input, output, session) {
   #  }
   #})
   
+  click_status <- reactiveValues(clicked = FALSE)
+  
   observeEvent(input$show_summary, {
     #req(input$columns)
     maxi <- 50
@@ -107,6 +108,7 @@ server <- function(input, output, session) {
       result_MissingV(M.1)
     })
     output$response.V<-renderPrint({
+      if(input$columns_res_Type==1){
       D.t<-as.data.frame(data())
       response.t<-input$columns_res
       res.1<-table(D.t[,which(names(D.t)==response.t)])
@@ -117,10 +119,13 @@ server <- function(input, output, session) {
       colnames(res.M)<-c(paste0(response.t,".",names(res.1)),"總和")
       print(res.M)
       result_classv(res.M)
+      }else{
+        "Working"
+      }
     })
     #
     output$summary <- renderPrint({
-      
+      if(input$columns_res_Type==1){
       if(is.null(input$columns_res)){
         result <- lapply(c(input$columns_cat,input$columns_con), function(col){
           summary(data()[[col]])
@@ -249,7 +254,9 @@ server <- function(input, output, session) {
           }
         }
       }
-      
+      }else{
+        "Working"
+      }
     })
     #Important variables: RF
     RF<-reactive({
