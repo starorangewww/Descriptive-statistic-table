@@ -18,35 +18,39 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       fileInput("file", "選擇 CSV 檔案", accept = ".csv"),
-      #selectizeInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL, multiple = TRUE),
-      #selectizeInput("columns_cat", "選擇要顯示的類別變數", choices = NULL, multiple = TRUE),
-      #selectizeInput("columns_con", "選擇要顯示的連續變數", choices = NULL, multiple = TRUE),
-      checkboxGroupInput("columns_res", "請選擇反應變數 (Response)", choices = NULL,inline = F),
-      checkboxGroupInput("columns_cat", "請選擇類別變數 (Categorical variables)", choices = NULL,inline = F),
-      checkboxGroupInput("columns_con", "請選擇連續變數 (Continuous variables)", choices = NULL,inline = F),
+      selectizeInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL, multiple = TRUE),
+      selectizeInput("columns_cat", "選擇要顯示的類別變數", choices = NULL, multiple = TRUE),
+      selectizeInput("columns_con", "選擇要顯示的連續變數", choices = NULL, multiple = TRUE),
+      #checkboxGroupInput("columns_res", "請選擇反應變數 (Response)", choices = NULL,inline = F),
+      #checkboxGroupInput("columns_cat", "請選擇類別變數 (Categorical variables)", choices = NULL,inline = F),
+      #checkboxGroupInput("columns_con", "請選擇連續變數 (Continuous variables)", choices = NULL,inline = F),
       br(),
-      #連續變數未完成
+      #
       checkboxGroupInput("columns_res_Type", "反應變數類型", choices = list("類別變數"=1,"連續變數"=2),inline = F),
       br(),
-      radioButtons("testing.cont", label = "連續變數相等性假設檢定",
+      c("反應變數為類別變數"),
+      radioButtons("testing.cont", label = "假設檢定(類別變數vs連續變數)",
                    choices = list("Mann-Whitney U test" = 1, "Two-sample t test" = 2,"Kruskal-Wallis test"=3), selected = 1),
-      radioButtons("testing.cate", label = "離散變數相等性假設檢定",
+      radioButtons("testing.cate", label = "假設檢定(類別變數vs類別變數)",
                    choices = list("Chi-square test" = 1, "Fisher's exact test" = 2), selected = 1),
       
-      textInput("signif", label = "顯著水準", value = "0.38"),
+      c("反應變數為連續變數"),
+      radioButtons("testing.cont_1", label = "假設檢定(連續變數vs類別變數)",
+                   choices = list("Kruskal-Wallis test"=1), selected = 1),
+      radioButtons("testing.cate_1", label = "假設檢定(連續變數vs連續變數)",
+                   choices = list("Student's t test" = 1), selected = 1),
       br(),
       actionButton("show_summary", "顯示敘述統計"),
       progressBar(id = "pb4", value = 0,display_pct = T),
-      br(),
       br(),
       downloadButton("download_summary", "下載敘述統計結果")
     ),
     mainPanel(
       tabsetPanel(
+        tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("abundant.V") ,verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V"),verbatimTextOutput("Descriptive")),
         tabPanel("敘述統計", verbatimTextOutput("summary")),
-        tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V"),verbatimTextOutput("Descriptive")),
-        tabPanel("變數重要性",plotOutput("RF"),plotOutput("Shap_plot")),
-        tabPanel("變數視覺化",plotOutput("bar_plot"),plotOutput("Box_plot"))
+        #tabPanel("變數重要性",plotOutput("RF"),plotOutput("Shap_plot")),
+        tabPanel("變數視覺化",plotOutput("Cate_plot"),plotOutput("Con_plot"))
       )
     )
   )
@@ -65,14 +69,15 @@ server <- function(input, output, session) {
   
   observe({
     if (!is.null(data())) {
-      #updateSelectizeInput(session, "columns_cat", choices = colnames(data()))
-      #updateSelectizeInput(session, "columns_con", choices = setdiff(colnames(data()), input$columns_cat))
-      #updateSelectizeInput(session, "columns_con", choices = colnames(data()))
+      updateSelectizeInput(session, "columns_res", choices = colnames(data()))
+      updateSelectizeInput(session, "columns_cat", choices = colnames(data()))
+      updateSelectizeInput(session, "columns_con", choices = colnames(data()))
       #
       #updateSelectizeInput(session, "columns_res", choices = colnames(data()))
-      updateCheckboxGroupInput(session, "columns_res", choices = colnames(data()))
-      updateCheckboxGroupInput(session, "columns_cat", choices = colnames(data()))
-      updateCheckboxGroupInput(session, "columns_con", choices = colnames(data()))
+      #
+      #updateCheckboxGroupInput(session, "columns_res", choices = colnames(data()))
+      #updateCheckboxGroupInput(session, "columns_cat", choices = colnames(data()))
+      #updateCheckboxGroupInput(session, "columns_con", choices = colnames(data()))
     }
   })
   #observeEvent(input$columns_res, {
@@ -91,7 +96,7 @@ server <- function(input, output, session) {
   #  }
   #})
   
-  click_status <- reactiveValues(clicked = FALSE)
+  #click_status <- reactiveValues(clicked = FALSE)
   
   observeEvent(input$show_summary, {
     #req(input$columns)
@@ -101,8 +106,24 @@ server <- function(input, output, session) {
       Sys.sleep(0.1)
     }
     #
+    output$abundant.V<-renderPrint({
+      response.t<-input$columns_res
+      Con.1<-input$columns_con
+      Cate.1<-input$columns_cat
+      #Diversity
+      DV<-1-sum((1/dim(data()[,c(response.t,Con.1,Cate.1)])[2])^2)
+      #1-Missing
+      CC<-mean(1-colMeans(is.na(data()[,c(response.t,Con.1,Cate.1)])))
+      #
+      Abundant<-DV*CC
+      print(Abundant)
+    })
+      
     output$Missing.V<-renderPrint({
-      M.1<-rbind(round(colMeans(is.na(data()))*100,2),colMeans(is.na(data()))*dim(data())[1])
+      response.t<-input$columns_res
+      Con.1<-input$columns_con
+      Cate.1<-input$columns_cat
+      M.1<-rbind(round(colMeans(is.na(data()[,c(response.t,Con.1,Cate.1)]))*100,2),colMeans(is.na(data()[,c(response.t,Con.1,Cate.1)]))*dim(data())[1])
       rownames(M.1)<-c("比例(%)","個數")
       print(M.1)
       result_MissingV(M.1)
@@ -120,12 +141,24 @@ server <- function(input, output, session) {
       print(res.M)
       result_classv(res.M)
       }else{
-        "Working"
+        D.t<-as.data.frame(data())
+        response.t<-input$columns_res
+        #res.M<-summary(D.t[,which(names(D.t)==response.t)])
+        Mean.t<-round(mean(D.t[,which(names(D.t)==response.t)],na.rm = T),2)
+        SD.t<-round(sqrt(var(D.t[,which(names(D.t)==response.t)],na.rm = T)),2)
+        med.t<-median(D.t[,which(names(D.t)==response.t)],na.rm = T)
+        sample.size<-length(D.t[,which(names(D.t)==response.t)])
+        max.t<-max(D.t[,which(names(D.t)==response.t)],na.rm = T)
+        min.t<-min(D.t[,which(names(D.t)==response.t)],na.rm = T)
+        res.M<-matrix(c(min.t,med.t,max.t,Mean.t,SD.t,sample.size),nrow=1)
+        colnames(res.M)<-c("Min","Median","Max","Mean","SD","Sample size")
+        #
+        result_classv(res.M)
+        print(res.M)
       }
     })
     #
     output$summary <- renderPrint({
-      if(input$columns_res_Type==1){
       if(is.null(input$columns_res)){
         result <- lapply(c(input$columns_cat,input$columns_con), function(col){
           summary(data()[[col]])
@@ -139,166 +172,174 @@ server <- function(input, output, session) {
           print("Please chosoe one")
           
           }else{
-          Class.1<-names(table(data()[[response.1]]))
-          Con.1<-input$columns_con
-          Cate.1<-input$columns_cat
-          if(length(Class.1)!=2){
-            #class > 2
-            #Continous
-            Descriptive.Cont<-c()
-            if(length(Con.1)==0){Descriptive.Cont<-Descriptive.Cont}else{
-              for(k.1 in Con.1){
-                Descriptive.con<-c()
-                for(i in 1:length(Class.1)){
-                  result.2.Mean <- mean(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
-                  result.2.SD <- sqrt(var(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T))
-                  result.2.Med <- median(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
-                  Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2),"(",result.2.Med,")"))
+            if(input$columns_res_Type==1){
+              #if response is categorical
+              Class.1<-names(table(data()[[response.1]]))
+              Con.1<-input$columns_con
+              Cate.1<-input$columns_cat
+              if(length(Class.1)!=2){
+                #class > 2
+                #Continous
+                Descriptive.Cont<-c()
+                if(length(Con.1)==0){Descriptive.Cont<-Descriptive.Cont}else{
+                  for(k.1 in Con.1){
+                    Descriptive.con<-c()
+                    for(i in 1:length(Class.1)){
+                      result.2.Mean <- mean(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
+                      result.2.SD <- sqrt(var(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T))
+                      result.2.Med <- median(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
+                      Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2),"(",result.2.Med,")"))
+                    }
+                    # testing
+                    if(input$testing.cont==3){
+                      MW<-kruskal.test(x=D.1[,which(names(D.1)==response.1)],g=D.1[,which(names(D.1)==k.1)])
+                      #D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)],exact = F)
+                      
+                      Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
+                    }
+                    Descriptive.Cont<-rbind(Descriptive.Cont,Descriptive.con)
+                  }
+                  rownames(Descriptive.Cont)<-Con.1
                 }
-                # testing
-                if(input$testing.cont==3){
-                  MW<-kruskal.test(D.1[,which(names(D.1)==k.1)],D.1[,which(names(D.1)==response.1)])
-                        #D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)],exact = F)
-                  
-                  Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
+                #Cate
+                Descriptive.Cate<-c()
+                if(length(Cate.1)==0){Descriptive.Cate<-Descriptive.Cate}else{
+                  for(k.2 in Cate.1){
+                    VV<-paste0(k.2,".",names(table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)]))) 
+                    result.2.table <- table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)],D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==response.1)])
+                    result.2.table.row<-prop.table(result.2.table, margin = 1)
+                    result.3<-matrix(paste0(result.2.table,"(",round(result.2.table.row*100,2),"%",")"),nrow = dim(result.2.table)[1],ncol = dim(result.2.table)[2])
+                    testing.col<-matrix(NA,ncol=1,nrow=dim(result.2.table)[1])
+                    # testing
+                    if(input$testing.cate==1){
+                      Chi.Val<-chisq.test(result.2.table)
+                      testing.col[1,]<-round(Chi.Val$p.value,2)
+                    }else{
+                      Fisher.exact<-fisher.test(result.2.table)
+                      testing.col[1,]<-round(Fisher.exact$p.value,2)
+                    }
+                    result.3<-cbind(result.3,testing.col)
+                    rownames(result.3)<-VV
+                    Descriptive.Cate<-rbind(Descriptive.Cate,result.3)
+                  }
                 }
-                Descriptive.Cont<-rbind(Descriptive.Cont,Descriptive.con)
+                result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
+                RR<-paste0(response.1,".",names(table(D.1[,which(names(D.1)==response.1)]))) 
+                colnames(result.summary)<-c(RR,"P value")
+                
+                result_summary1(result.summary)
+                print(result.summary)
+                #
+              }else{
+                #Continous
+                Descriptive.Cont<-c()
+                if(length(Con.1)==0){Descriptive.Cont<-Descriptive.Cont}else{
+                  for(k.1 in Con.1){
+                    Descriptive.con<-c()
+                    for(i in 1:length(Class.1)){
+                      result.2.Mean <- mean(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
+                      result.2.SD <- sqrt(var(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T))
+                      result.2.Med <- median(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
+                      Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2),"(",result.2.Med,")"))
+                    }
+                    # testing
+                    if(input$testing.cont==1){
+                      MW<-wilcox.test(D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],
+                                      D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)],exact = F)
+                      Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
+                    }else{
+                      if(input$testing.cont==2){
+                        Two.t<-t.test(D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)])
+                        Descriptive.con<-c(Descriptive.con,round(Two.t$p.value,2))
+                      }
+                    }
+                    #Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
+                    Descriptive.Cont<-rbind(Descriptive.Cont,Descriptive.con)
+                  }
+                  rownames(Descriptive.Cont)<-Con.1
+                }
+                #Cate
+                Descriptive.Cate<-c()
+                if(length(Cate.1)==0){Descriptive.Cate<-Descriptive.Cate}else{
+                  for(k.2 in Cate.1){
+                    VV<-paste0(k.2,".",names(table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)]))) 
+                    result.2.table <- table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)],D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==response.1)])
+                    result.2.table.row<-prop.table(result.2.table, margin = 1)
+                    result.3<-matrix(paste0(result.2.table,"(",round(result.2.table.row*100,2),"%",")"),nrow = dim(result.2.table)[1],ncol = dim(result.2.table)[2])
+                    testing.col<-matrix(NA,ncol=1,nrow=dim(result.2.table)[1])
+                    # testing
+                    if(input$testing.cate==1){
+                      Chi.Val<-chisq.test(result.2.table)
+                      testing.col[1,]<-round(Chi.Val$p.value,2)
+                    }else{
+                      Fisher.exact<-fisher.test(result.2.table)
+                      testing.col[1,]<-round(Fisher.exact$p.value,2)
+                    }
+                    result.3<-cbind(result.3,testing.col)
+                    rownames(result.3)<-VV
+                    Descriptive.Cate<-rbind(Descriptive.Cate,result.3)
+                  }
+                }
+                result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
+                RR<-paste0(response.1,".",names(table(D.1[,which(names(D.1)==response.1)]))) 
+                colnames(result.summary)<-c(RR,"P value")
+                
+                result_summary1(result.summary)
+                print(result.summary)
               }
-              rownames(Descriptive.Cont)<-Con.1
-            }
-            #Cate
+            }else{
+              #if response is continuous
+              Con.1<-input$columns_con
+              Cate.1<-input$columns_cat
+              #Continous
+              Descriptive.Cont<-c()
+              if(length(Con.1)==0){Descriptive.Cont<-Descriptive.Cont}else{
+                for(k.1 in Con.1){
+                  #Descriptive.con<-c()
+                  W.1<-cor.test(D.1[,which(names(D.1)==response.1)],D.1[,which(names(D.1)==k.1)])
+                  W.1.1<-paste(round(W.1$estimate,2),"±",round(abs(W.1$estimate/W.1$statistic),2))
+                  Descriptive.con<-c(W.1.1,round(W.1$p.value,2))
+                  #
+                  Descriptive.Cont<-rbind(Descriptive.Cont,Descriptive.con)
+                }
+                rownames(Descriptive.Cont)<-Con.1
+              }
+             #categorical 
             Descriptive.Cate<-c()
             if(length(Cate.1)==0){Descriptive.Cate<-Descriptive.Cate}else{
               for(k.2 in Cate.1){
                 VV<-paste0(k.2,".",names(table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)]))) 
-                result.2.table <- table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)],D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==response.1)])
-                result.2.table.row<-prop.table(result.2.table, margin = 1)
-                result.3<-matrix(paste0(result.2.table,"(",round(result.2.table.row*100,2),"%",")"),nrow = dim(result.2.table)[1],ncol = dim(result.2.table)[2])
-                testing.col<-matrix(NA,ncol=1,nrow=dim(result.2.table)[1])
-                # testing
-                if(input$testing.cate==1){
-                  Chi.Val<-chisq.test(result.2.table)
-                  testing.col[1,]<-round(Chi.Val$p.value,2)
-                }else{
-                  Fisher.exact<-fisher.test(result.2.table)
-                  testing.col[1,]<-round(Fisher.exact$p.value,2)
-                }
-                result.3<-cbind(result.3,testing.col)
+                Descriptive.cate1<-c()
+                Descriptive.catep<-c()
+                Cate1<-names(table(D.1[,which(names(D.1)==k.2)]))
+                for(i in 1:length(Cate1)){
+                  result.2.Mean <- mean(D.1[which(D.1[,k.2]==Cate1[i]),which(names(D.1)==response.1)],na.rm = T)
+                  result.2.SD <- sqrt(var(D.1[which(D.1[,k.2]==Cate1[i]),which(names(D.1)==response.1)],na.rm = T))
+                  result.2.Med <- median(D.1[which(D.1[,k.2]==Cate1[i]),which(names(D.1)==response.1)],na.rm = T)
+                  Descriptive.cate1<-c(Descriptive.cate1,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2),"(",result.2.Med,")"))
+                  #testing
+                  }
+                MW<-kruskal.test(D.1[,which(names(D.1)==response.1)],D.1[,which(names(D.1)==k.2)])
+                Descriptive.catep<-c(Descriptive.catep,c(round(MW$p.value,2),rep(NA,length(table(D.1[,which(names(D.1)==k.2)]))-1)))
+                result.3<-cbind(Descriptive.cate1,Descriptive.catep)
                 rownames(result.3)<-VV
+                #
                 Descriptive.Cate<-rbind(Descriptive.Cate,result.3)
               }
             }
             result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
-            RR<-paste0(response.1,".",names(table(D.1[,which(names(D.1)==response.1)]))) 
-            colnames(result.summary)<-c(RR,"P value")
-            
-            result_summary1(result.summary)
-            print(result.summary)
+            colnames(result.summary)<-c(response.1,"P value")
             #
-            }else{
-            #Continous
-            Descriptive.Cont<-c()
-            if(length(Con.1)==0){Descriptive.Cont<-Descriptive.Cont}else{
-            for(k.1 in Con.1){
-              Descriptive.con<-c()
-              for(i in 1:length(Class.1)){
-                result.2.Mean <- mean(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
-                result.2.SD <- sqrt(var(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T))
-                result.2.Med <- median(D.1[which(D.1[,response.1]==Class.1[i]),which(names(D.1)==k.1)],na.rm = T)
-                Descriptive.con<-c(Descriptive.con,paste0(round(result.2.Mean,2),"±",round(result.2.SD,2),"(",result.2.Med,")"))
-              }
-              # testing
-              if(input$testing.cont==1){
-                MW<-wilcox.test(D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],
-                                D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)],exact = F)
-                Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
-              }else{
-                if(input$testing.cont==2){
-                  Two.t<-t.test(D.1[which(D.1[,response.1]==Class.1[1]),which(names(D.1)==k.1)],D.1[which(D.1[,response.1]==Class.1[2]),which(names(D.1)==k.1)])
-                  Descriptive.con<-c(Descriptive.con,round(Two.t$p.value,2))
-                }
-              }
-              #Descriptive.con<-c(Descriptive.con,round(MW$p.value,2))
-              Descriptive.Cont<-rbind(Descriptive.Cont,Descriptive.con)
-            }
-            rownames(Descriptive.Cont)<-Con.1
-            }
-            #Cate
-            Descriptive.Cate<-c()
-            if(length(Cate.1)==0){Descriptive.Cate<-Descriptive.Cate}else{
-            for(k.2 in Cate.1){
-              VV<-paste0(k.2,".",names(table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)]))) 
-              result.2.table <- table(D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==k.2)],D.1[which(is.na(D.1[,k.2])==F),which(names(D.1)==response.1)])
-              result.2.table.row<-prop.table(result.2.table, margin = 1)
-              result.3<-matrix(paste0(result.2.table,"(",round(result.2.table.row*100,2),"%",")"),nrow = dim(result.2.table)[1],ncol = dim(result.2.table)[2])
-              testing.col<-matrix(NA,ncol=1,nrow=dim(result.2.table)[1])
-              # testing
-              if(input$testing.cate==1){
-                Chi.Val<-chisq.test(result.2.table)
-                testing.col[1,]<-round(Chi.Val$p.value,2)
-              }else{
-                Fisher.exact<-fisher.test(result.2.table)
-                testing.col[1,]<-round(Fisher.exact$p.value,2)
-              }
-              result.3<-cbind(result.3,testing.col)
-              rownames(result.3)<-VV
-              Descriptive.Cate<-rbind(Descriptive.Cate,result.3)
-            }
-            }
-            result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
-            RR<-paste0(response.1,".",names(table(D.1[,which(names(D.1)==response.1)]))) 
-            colnames(result.summary)<-c(RR,"P value")
-            
             result_summary1(result.summary)
             print(result.summary)
-          }
+            }
+          
         }
       }
-      }else{
-        "Working"
-      }
+   
     })
     #Important variables: RF
-    RF<-reactive({
-      D.1<-as.data.frame(data())
-      response.1<-input$columns_res
-      Con.1<-input$columns_con
-      Cate.1<-input$columns_cat
-      D.1.1<-D.1[complete.cases(D.1)==T,]
-      D.1.2<-D.1.1[,which(names(D.1.1)%in%c(response.1,Con.1,Cate.1))]
-      set.seed(1)
-      fit <- ranger(y=D.1.2[,which(names(D.1.2)==response.1)],x=D.1.2[,-which(names(D.1.2)==response.1)],data=D.1.2,importance = "impurity")
-      #Importance
-      VIP<-data.frame(value=round(as.numeric(fit$variable.importance),2),Val=names(fit$variable.importance))
-      
-      P1<-ggplot(VIP,aes(x = reorder(Val, value),y = value,fill = value))+geom_bar(stat = "identity", position = "dodge") +
-        coord_flip() +
-        ylab("Variable Importance") +
-        xlab("") +
-        ggtitle("Information Value Summary") +
-        guides(fill = "none") +
-        scale_fill_gradient(low = "lightblue", high = "darkblue")+
-        geom_text(aes(label = value), vjust = 0, hjust = 2, size = 7, color = "white")+theme(text = element_text(size = 15))
-      
-      
-      #Shap value
-      s <- kernelshap(fit,D.1.2[,-which(names(D.1.2)==response.1)], bg_X = D.1.2,verbose=F)
-      # Step 2: Turn them into a shapviz object
-      sv <- shapviz(s)
-      # Step 3: Gain insights...
-      RF.shap<-sv_importance(sv, kind = "bee",number_size = 20, bee_adjust = 10)
-      #
-      #print(sort(importance(fit)))
-      return(list(V1=P1,V2=RF.shap))
-    })
     
-    output$RF<-renderPlot({
-      RF()[[1]]
-    })
-    
-    output$Shap_plot<-renderPlot({
-      RF()[[2]]
-    })
     
     
     #Descriptive
@@ -306,7 +347,8 @@ server <- function(input, output, session) {
       First.D<-result_classv()
       Second.D<-result_MissingV()
       Thirs.D<-result_summary1()
-      significant<-as.numeric(input$signif)
+      if(input$columns_res_Type==1){
+    significant<-as.numeric(input$signif)
      Begin<-c("According to the results of descriptive statistics,")  
      First.stagement<-paste(c("this data is totally"),First.D[2,dim(First.D)[2]],", and the number of class has",dim(First.D)[2]-1,".")
      Sec.stagement<-paste0("The number of ", colnames(First.D)[1:(dim(First.D)[2]-1)]," is ",First.D[2,1:(dim(First.D)[2]-1)],", and the proportion is ",First.D[1,1:(dim(First.D)[2]-1)],"%.")
@@ -336,25 +378,44 @@ server <- function(input, output, session) {
        #
        paste("The number of significant variable is ",length(Var.2),", it is including about", paste(Var.2,collapse=", "),".")
        }
-      Fifth.stagement<-c("The results presented above are derived from univariate analysis. This means that the significant relationship is organized solely by the response variable and a single independent variable at a time. We can provide insights into the importance of these variables with respect to the response variable by utilizing random forest methodology.")
+      Fifth.stagement<-c("The results presented above are derived from univariate analysis. This means that the significant relationship is organized solely by the response variable and a single independent variable at a time.")
+      #We can provide insights into the importance of these variables with respect to the response variable by utilizing random forest methodology.
       #cat(Begin)
       #cat("\n")
       #cat(First.stagement)
       #cat("\n")
       #cat(Sec.stagement)
       #cat("\n")
-      cat(Begin,"\n",First.stagement,"\n",
+      cat(Begin,First.stagement,"\n",
          Sec.stagement,"\n",fourth.stagement,"\n",Fifth.stagement)
+      }else{
+        significant<-as.numeric(input$signif)
+        Begin<-c("According to the results of descriptive statistics,")  
+        First.stagement<-paste(c("this data is totally"),First.D[1,dim(First.D)[2]],".")
+        Cont.test<-"t test"
+        Cate.test<-"Kruskal-Wallis test"
+        #
+        Con.1<-input$columns_con
+        Cate.1<-input$columns_cat
+        
+        Var.sig<-which(Thirs.D[,dim(Thirs.D)[2]]<significant)
+        fourth.stagement<-if(length(Var.sig)==0){"These variables are insignificant."}else{
+          rownames(Thirs.D)[Var.sig]
+          }
+        cat(Begin,First.stagement,"\n",
+            fourth.stagement)
+      }
     })
     
     #Categorical variable: Bar plot
-    output$bar_plot <- renderPlot({
+    output$Cate_plot <- renderPlot({
+      if(input$columns_res_Type==1){
       D.1<-as.data.frame(data())
       response.1<-input$columns_res
       if(length(response.1)==0){"No"}else{
         Cate.1<-input$columns_cat
         if(length(response.1)>1){print("Please choose one")}else{
-          # 使用 ggplot2 或其他繪圖包繪製長條圖
+          # 使用 ggplot2: barplot
           P <- lapply(Cate.1, function(CAT){
             D.plty.c <- data.frame(Count=c(t(table(D.1[,names(D.1)==CAT],D.1[,names(D.1)==response.1]))),
                                    X=rep(names(table(D.1[,names(D.1)==response.1])),length(names(table(D.1[,names(D.1)==CAT])))),
@@ -368,13 +429,35 @@ server <- function(input, output, session) {
           
           # 使用 grid.arrange 函數來顯示每個 ggplot 圖形
           grid.arrange(grobs = P)
-        }
-      }
+        }}
+      }else{
+        D.1<-as.data.frame(data())
+        response.1<-input$columns_res
+        if(length(response.1)==0){"No"}else{
+          Cate.1<-input$columns_cat
+          if(length(response.1)>1){print("Please choose one")}else{
+            # 使用 ggplot2: Boxplot
+            P <- lapply(Cate.1, function(CAT){
+              D.plty1<-data.frame(res=D.1[,names(D.1)==response.1],group.1=D.1[,names(D.1)==CAT])
+              #Plot
+              ggplot(D.plty1, aes(y=res, x=factor(group.1),color=factor(group.1))) +
+                geom_boxplot()+geom_flat_violin(position = position_nudge(x = .2),
+                                                trim = TRUE, alpha = 0.7, scale = "width")+
+                geom_point(aes(color = factor(group.1)),position = position_jitter(w = .15))+
+                xlab(names(D.1)[which(names(D.1)==CAT)])+theme(text = element_text(size = 15))+
+                ylab(names(D.1)[which(names(D.1)==response.1)])+guides(color = "none")
+            })
+            
+            # 使用 grid.arrange 函數來顯示每個 ggplot 圖形
+            grid.arrange(grobs = P)
+          }
+        }}
       
     })
     
     #Continuous variable: Box plot
-    output$Box_plot<-renderPlot({
+    output$Con_plot<-renderPlot({
+      if(input$columns_res_Type==1){
       D.1<-as.data.frame(data())
       response.1<-input$columns_res
       if(length(response.1)==0){"No"}else{
@@ -395,12 +478,26 @@ server <- function(input, output, session) {
           grid.arrange(grobs = P)
         }
       }
-      
-      
+      }else{
+        D.1<-as.data.frame(data())
+        response.1<-input$columns_res
+        if(length(response.1)==0){"No"}else{
+          Cont.1<-input$columns_con
+          if(length(response.1)>1){print("Please chose one")}else{
+            P<-lapply(Cont.1, function(CONT){
+              D.plty1<-data.frame(res=D.1[,names(D.1)==response.1],group.1=D.1[,names(D.1)==CONT])
+              #Plot
+              ggplot(D.plty1, aes(y=res,x=group.1))+
+                geom_point()+geom_smooth(method=lm)+
+                xlab(names(D.1)[which(names(D.1)==CONT)])+theme(text = element_text(size = 15))+
+                ylab(names(D.1)[which(names(D.1)==response.1)])
+              #+guides(color = "none")+labs(color=names(D.1)[which(names(D.1)==CONT)])+
+              # 使用grid.arrange 函數來顯示每個 ggplot 圖形
+            })
+            grid.arrange(grobs = P)
+          }}
+      }
     })
-      
-      
-
     
   })
   
