@@ -5,11 +5,13 @@ library(ggplot2)
 library(PupillometryR)
 library(shinythemes)
 library(shinyWidgets)
-library(randomForest)
+library(rmarkdown)
+#library(randomForest)
 #library(glmnet)
-library(kernelshap)
-library(shapviz)
-library(ranger)
+#library(kernelshap)
+#library(shapviz)
+#library(ranger)
+
 # 定義 UI 部分
 ui <- fluidPage(
   theme=shinytheme("slate"),
@@ -17,7 +19,8 @@ ui <- fluidPage(
   
   sidebarLayout(
     sidebarPanel(
-      fileInput("file", "選擇 CSV 檔案", accept = ".csv"),
+      #fileInput("file", "選擇 CSV 檔案", accept = ".csv"),
+      fileInput("file", "選擇 CSV 檔案或 TXT 檔案"),
       selectizeInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL, multiple = TRUE),
       selectizeInput("columns_cat", "選擇要顯示的類別變數", choices = NULL, multiple = TRUE),
       selectizeInput("columns_con", "選擇要顯示的連續變數", choices = NULL, multiple = TRUE),
@@ -26,7 +29,8 @@ ui <- fluidPage(
       #checkboxGroupInput("columns_con", "請選擇連續變數 (Continuous variables)", choices = NULL,inline = F),
       br(),
       #
-      checkboxGroupInput("columns_res_Type", "反應變數類型", choices = list("類別變數"=1,"連續變數"=2),inline = F),
+      #checkboxGroupInput("columns_res_Type", "反應變數類型", choices = list("類別變數"=1,"連續變數"=2),inline = T),
+      radioButtons("columns_res_Type", "反應變數類型", choices = list("類別變數"=1,"連續變數"=2),selected = 1,inline = T),
       br(),
       c("反應變數為類別變數"),
       radioButtons("testing.cont", label = "假設檢定(類別變數vs連續變數)",
@@ -40,6 +44,8 @@ ui <- fluidPage(
       radioButtons("testing.cate_1", label = "假設檢定(連續變數vs連續變數)",
                    choices = list("Student's t test" = 1), selected = 1),
       br(),
+      textInput("signif", label = "顯著水準", value = "0.05"),
+      br(),
       actionButton("show_summary", "顯示敘述統計"),
       progressBar(id = "pb4", value = 0,display_pct = T),
       br(),
@@ -47,8 +53,12 @@ ui <- fluidPage(
     ),
     mainPanel(
       tabsetPanel(
-        tabPanel("遺失值個數(比例)/反應變數個數(比例)", verbatimTextOutput("abundant.V") ,verbatimTextOutput("Missing.V"),verbatimTextOutput("response.V"),verbatimTextOutput("Descriptive")),
-        tabPanel("敘述統計", verbatimTextOutput("summary")),
+        tabPanel("資料整體特性", "資料分析價值性(變數多樣性X資料完整性)", verbatimTextOutput("abundant.V") ,plotOutput("valuable_plot"),
+                 "遺失值個數(比例)/反應變數個數(比例)",verbatimTextOutput("Missing.V"),
+                 br(),
+                 "反應變數之統計敘述",verbatimTextOutput("response.V"),plotOutput("Response_plot")
+                 ),
+        tabPanel("反應變數與解釋變數間之敘述統計", verbatimTextOutput("summary"),"簡易報表結果",verbatimTextOutput("Descriptive")),
         #tabPanel("變數重要性",plotOutput("RF"),plotOutput("Shap_plot")),
         tabPanel("變數視覺化",plotOutput("Cate_plot"),plotOutput("Con_plot"))
       )
@@ -62,9 +72,26 @@ server <- function(input, output, session) {
   result_summary1 <- reactiveVal(NULL)
   result_MissingV <- reactiveVal(NULL)
   result_classv <- reactiveVal(NULL)
+  #Only csv
+  #data <- reactive({
+  #  req(input$file)
+  #  read_csv(input$file$datapath)
+  #})
+  
+  #csv txt RDS
   data <- reactive({
     req(input$file)
-    read_csv(input$file$datapath)
+    inFile <- input$file
+    if (grepl("\\.csv$", inFile$name)) {
+      read.csv(inFile$datapath)
+    } else if (grepl("\\.txt$", inFile$name)) {
+      read.table(inFile$datapath)
+    } else if (grepl("\\.rds$", inFile$name)) {
+      readRDS(inFile$datapath)
+    } else {
+      # 處理其他檔案格式的情況，例如提供錯誤信息或採取其他操作
+      NULL
+    }
   })
   
   observe({
@@ -113,12 +140,50 @@ server <- function(input, output, session) {
       #Diversity
       DV<-1-sum((1/dim(data()[,c(response.t,Con.1,Cate.1)])[2])^2)
       #1-Missing
-      CC<-mean(1-colMeans(is.na(data()[,c(response.t,Con.1,Cate.1)])))
+      #CC<-mean(1-colMeans(is.na(data()[,c(response.t,Con.1,Cate.1)])))
+      CC<-prod(1-colMeans(is.na(data()[,c(response.t,Con.1,Cate.1)])))
       #
       Abundant<-DV*CC
-      print(Abundant)
+      Abundant.1<-paste(round(DV,2),"X",round(CC,2),"=",round(Abundant,2))
+      #
+      data <- data.frame(
+        category = c("Abundant","inAbundant"),
+        value = c(Abundant,1-Abundant))
+      #
+      print(Abundant.1)
     })
       
+    output$valuable_plot<-renderPlot({
+      response.t<-input$columns_res
+      Con.1<-input$columns_con
+      Cate.1<-input$columns_cat
+      #Diversity
+      DV<-1-sum((1/dim(data()[,c(response.t,Con.1,Cate.1)])[2])^2)
+      #1-Missing
+      CC<-prod(1-colMeans(is.na(data()[,c(response.t,Con.1,Cate.1)])))
+      #
+      Abundant<-DV*CC
+      data.ab <- data.frame(category = c("Abundant","inAbundant"),value = c(round(Abundant,2),1-round(Abundant,2)))
+      #
+      if(round(Abundant,2)>=0.75){
+      P.ab<-ggplot(data.ab, aes(x = "", y = value)) +
+        geom_bar(stat = "identity", width = 1,fill = c("#ADD8E6", "white")) +
+        coord_polar("y", start = 0) +
+        theme_void() +
+        theme(legend.position = "right") +
+        scale_fill_brewer(palette = "Set3") + 
+        geom_text(aes(label = c(paste0(round(value[1]*100,2),"%"),"")), position = position_stack(vjust = 0.5),size=10)}else{
+          P.ab<-ggplot(data.ab, aes(x = "", y = value)) +
+            geom_bar(stat = "identity", width = 1,fill = c("#8B0000", "white")) +
+            coord_polar("y", start = 0) +
+            theme_void() +
+            theme(legend.position = "right") +
+            scale_fill_brewer(palette = "Set3") + 
+            geom_text(aes(label = c(paste0(round(value[1]*100,2),"%"),"")), position = position_stack(vjust = 0.5),size=10)
+        }
+      print(P.ab)
+    })
+    
     output$Missing.V<-renderPrint({
       response.t<-input$columns_res
       Con.1<-input$columns_con
@@ -128,6 +193,7 @@ server <- function(input, output, session) {
       print(M.1)
       result_MissingV(M.1)
     })
+    
     output$response.V<-renderPrint({
       if(input$columns_res_Type==1){
       D.t<-as.data.frame(data())
@@ -158,12 +224,29 @@ server <- function(input, output, session) {
       }
     })
     #
+    output$Response_plot<-renderPlot({
+      if(input$columns_res_Type==1){
+        Data.class1<-result_classv()
+        Data.res.1<-data.frame(category1=colnames(Data.class1)[1:(dim(Data.class1)[2]-1)],value1=Data.class1[2,1:(dim(Data.class1)[2]-1)])
+        Res.plty<-ggplot(data=Data.res.1, aes(x=category1, y=value1, fill=category1))+geom_bar(stat="identity", position=position_dodge())
+      }else{
+        response.t<-input$columns_res
+        D.t<-as.data.frame(data()[,response.t])
+        names(D.t)<-"response"
+        Res.plty<-ggplot(D.t, aes(x=response)) + 
+        geom_histogram(aes(y=..density..), colour="black", fill="white")+geom_density(alpha=.2, fill="#FF6666") 
+      }
+      
+      print(Res.plty)
+      
+    })
+    #
     output$summary <- renderPrint({
       if(is.null(input$columns_res)){
         result <- lapply(c(input$columns_cat,input$columns_con), function(col){
           summary(data()[[col]])
         })
-        do.call("rbind", result)
+        result.summary<-do.call("rbind", result)
       }else{
         D.1<-as.data.frame(data())
         response.1<-input$columns_res
@@ -226,11 +309,10 @@ server <- function(input, output, session) {
                 result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
                 RR<-paste0(response.1,".",names(table(D.1[,which(names(D.1)==response.1)]))) 
                 colnames(result.summary)<-c(RR,"P value")
-                
-                result_summary1(result.summary)
                 print(result.summary)
                 #
               }else{
+                #class is 2
                 #Continous
                 Descriptive.Cont<-c()
                 if(length(Con.1)==0){Descriptive.Cont<-Descriptive.Cont}else{
@@ -283,8 +365,6 @@ server <- function(input, output, session) {
                 result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
                 RR<-paste0(response.1,".",names(table(D.1[,which(names(D.1)==response.1)]))) 
                 colnames(result.summary)<-c(RR,"P value")
-                
-                result_summary1(result.summary)
                 print(result.summary)
               }
             }else{
@@ -330,13 +410,11 @@ server <- function(input, output, session) {
             result.summary<-rbind(Descriptive.Cont,Descriptive.Cate)
             colnames(result.summary)<-c(response.1,"P value")
             #
-            result_summary1(result.summary)
             print(result.summary)
             }
-          
         }
       }
-   
+      result_summary1(result.summary)
     })
     #Important variables: RF
     
@@ -347,7 +425,8 @@ server <- function(input, output, session) {
       First.D<-result_classv()
       Second.D<-result_MissingV()
       Thirs.D<-result_summary1()
-      if(input$columns_res_Type==1){
+      #
+    if(input$columns_res_Type==1){
     significant<-as.numeric(input$signif)
      Begin<-c("According to the results of descriptive statistics,")  
      First.stagement<-paste(c("this data is totally"),First.D[2,dim(First.D)[2]],", and the number of class has",dim(First.D)[2]-1,".")
@@ -378,8 +457,12 @@ server <- function(input, output, session) {
        #
        paste("The number of significant variable is ",length(Var.2),", it is including about", paste(Var.2,collapse=", "),".")
        }
-      Fifth.stagement<-c("The results presented above are derived from univariate analysis. This means that the significant relationship is organized solely by the response variable and a single independent variable at a time.")
-      #We can provide insights into the importance of these variables with respect to the response variable by utilizing random forest methodology.
+     if(length(Var.sig)==0){
+       Fifth.stagement<-c("While this result only shows a univariate analysis between the response and a single variable, we recommend exploring additional variables within this dataset.")
+     }else{
+     Fifth.stagement<-c("The results presented above are derived from univariate analysis. This means that the significant relationship is organized solely by the response variable and a single independent variable at a time. Therefore, you may consider employing alternative models to investigate the relationship between the response and overall variables.")
+     }
+     #We can provide insights into the importance of these variables with respect to the response variable by utilizing random forest methodology.
       #cat(Begin)
       #cat("\n")
       #cat(First.stagement)
@@ -401,9 +484,13 @@ server <- function(input, output, session) {
         Var.sig<-which(Thirs.D[,dim(Thirs.D)[2]]<significant)
         fourth.stagement<-if(length(Var.sig)==0){"These variables are insignificant."}else{
           rownames(Thirs.D)[Var.sig]
-          }
-        cat(Begin,First.stagement,"\n",
-            fourth.stagement)
+        }
+        if(length(Var.sig)==0){
+          Fifth.stagement<-c("While this result only shows a univariate analysis between the response and a single variable, we recommend exploring additional variables within this dataset.")
+        }else{
+          Fifth.stagement<-c("The results presented above are derived from univariate analysis. This means that the significant relationship is organized solely by the response variable and a single independent variable at a time. Therefore, you may consider employing alternative models to investigate the relationship between the response and overall variables.")
+        }
+        cat(Begin,First.stagement,"\n",fourth.stagement,"\n",Fifth.stagement)
       }
     })
     
@@ -515,4 +602,5 @@ server <- function(input, output, session) {
 
 # 啟動應用程序
 shinyApp(ui = ui, server = server)
+
 
