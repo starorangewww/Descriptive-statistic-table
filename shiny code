@@ -21,7 +21,7 @@ ui <- fluidPage(
     sidebarPanel(
       #fileInput("file", "選擇 CSV 檔案", accept = ".csv"),
       fileInput("file", "選擇 CSV 檔案或 TXT 檔案"),
-      selectizeInput("columns_res", "選擇要顯示作為依變數的列(如沒有就空著)", choices = NULL, multiple = TRUE),
+      selectizeInput("columns_res", "選擇要顯示作為依變數", choices = NULL, multiple = TRUE),
       selectizeInput("columns_cat", "選擇要顯示的類別變數", choices = NULL, multiple = TRUE),
       selectizeInput("columns_con", "選擇要顯示的連續變數", choices = NULL, multiple = TRUE),
       #checkboxGroupInput("columns_res", "請選擇反應變數 (Response)", choices = NULL,inline = F),
@@ -49,7 +49,9 @@ ui <- fluidPage(
       actionButton("show_summary", "顯示敘述統計"),
       progressBar(id = "pb4", value = 0,display_pct = T),
       br(),
-      downloadButton("download_summary", "下載敘述統計結果")
+      downloadButton("download_summary", "下載敘述統計報表"),
+      downloadButton("downloadPlot", "下載類別變數與反應變數關係圖"),
+      downloadButton("downloadPlot2", "下載連續變數與反應變數關係圖")
     ),
     mainPanel(
       tabsetPanel(
@@ -72,6 +74,8 @@ server <- function(input, output, session) {
   result_summary1 <- reactiveVal(NULL)
   result_MissingV <- reactiveVal(NULL)
   result_classv <- reactiveVal(NULL)
+  result_cateplot<-reactiveVal(NULL)
+  result_contplot<-reactiveVal(NULL)
   #Only csv
   #data <- reactive({
   #  req(input$file)
@@ -515,7 +519,9 @@ server <- function(input, output, session) {
           })
           
           # 使用 grid.arrange 函數來顯示每個 ggplot 圖形
-          grid.arrange(grobs = P)
+          P1<-grid.arrange(grobs = P)
+          print(P1)
+          result_cateplot(P1)
         }}
       }else{
         D.1<-as.data.frame(data())
@@ -536,7 +542,9 @@ server <- function(input, output, session) {
             })
             
             # 使用 grid.arrange 函數來顯示每個 ggplot 圖形
-            grid.arrange(grobs = P)
+            P1<-grid.arrange(grobs = P)
+            print(P1)
+            result_cateplot(P1)
           }
         }}
       
@@ -562,7 +570,9 @@ server <- function(input, output, session) {
             #labs(color=names(D.1)[which(names(D.1)==CONT)])+
             # 使用grid.arrange 函數來顯示每個 ggplot 圖形
           })
-          grid.arrange(grobs = P)
+          P2<-grid.arrange(grobs = P)
+          print(P2)
+          result_contplot(P2)
         }
       }
       }else{
@@ -581,7 +591,9 @@ server <- function(input, output, session) {
               #+guides(color = "none")+labs(color=names(D.1)[which(names(D.1)==CONT)])+
               # 使用grid.arrange 函數來顯示每個 ggplot 圖形
             })
-            grid.arrange(grobs = P)
+            P2<-grid.arrange(grobs = P)
+            print(P2)
+            result_contplot(P2)
           }}
       }
     })
@@ -595,6 +607,23 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       write.csv(result_summary1(), file, row.names = TRUE)
+    }
+  )
+  
+  output$downloadPlot <- downloadHandler(
+    filename = function() {
+      "plot_cate.png"
+    },
+    content = function(file) {
+      ggsave(file, plot = result_cateplot())
+    }
+  )
+  output$downloadPlot2 <- downloadHandler(
+    filename = function() {
+      "plot_cont.png"
+    },
+    content = function(file) {
+      ggsave(file, plot = result_contplot())
     }
   )
   
